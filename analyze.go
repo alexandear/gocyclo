@@ -31,25 +31,33 @@ func Analyze(paths []string, ignore *regexp.Regexp) Stats {
 			continue
 		}
 		if info.IsDir() {
-			stats = analyzeDir(path, ignore, stats)
+			stats, err = analyzeDir(path, ignore, stats)
+			if err != nil {
+				log.Printf("could not analyze directory %q: %s\n", path, err)
+				continue
+			}
 		} else {
-			stats = analyzeFile(path, ignore, stats)
+			stats, err = analyzeFile(path, ignore, stats)
+			if err != nil {
+				log.Printf("could not analyze file %q: %s\n", path, err)
+				continue
+			}
 		}
 	}
 	return stats
 }
 
-func analyzeDir(dirname string, ignore *regexp.Regexp, stats Stats) Stats {
-	filepath.WalkDir(dirname, func(path string, entry fs.DirEntry, err error) error {
+func analyzeDir(dirname string, ignore *regexp.Regexp, stats Stats) (Stats, error) {
+	err := filepath.WalkDir(dirname, func(path string, entry fs.DirEntry, err error) error {
 		if isSkipDir(entry) {
 			return filepath.SkipDir
 		}
 		if err == nil && isGoFile(entry) {
-			stats = analyzeFile(path, ignore, stats)
+			stats, err = analyzeFile(path, ignore, stats)
 		}
 		return err
 	})
-	return stats
+	return stats, err
 }
 
 var skipDirs = map[string]bool{
@@ -67,16 +75,16 @@ func isGoFile(entry fs.DirEntry) bool {
 	return !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go")
 }
 
-func analyzeFile(path string, ignore *regexp.Regexp, stats Stats) Stats {
+func analyzeFile(path string, ignore *regexp.Regexp, stats Stats) (Stats, error) {
 	if isIgnored(path, ignore) {
-		return stats
+		return stats, nil
 	}
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return AnalyzeASTFile(f, fset, stats)
+	return AnalyzeASTFile(f, fset, stats), nil
 }
 
 func isIgnored(path string, ignore *regexp.Regexp) bool {
